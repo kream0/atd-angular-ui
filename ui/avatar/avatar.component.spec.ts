@@ -57,6 +57,6 @@ describe('UiAvatarComponent', () => {
 		avatar.querySelector('img')!.dispatchEvent(new Event('error'));
 		fixture.detectChanges();
 		expect(avatar.querySelector('img')).toBeNull();
-		expect(avatar.textContent).toContain('ME');
+		expect(avatar.textContent).toContain('CE');
 	});
 });
