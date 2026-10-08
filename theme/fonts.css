@@ -1,0 +1,17 @@
+/* The kit's fonts (SIL OFL 1.1, ./fonts/OFL.txt and ./fonts/OFL-el-messiri.txt). The URLs are relative to this file:
+   keep ./fonts next to it, or change them where the fonts are served from. */
+
+/* Mono: JetBrains Mono 400, Latin subset. */
+@font-face{font-family:"JetBrains Mono";font-style:normal;font-weight:400;font-display:swap;src:url(./fonts/jetbrains-mono-latin-400-normal.woff2) format("woff2");unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:"JetBrains Mono Fallback";src:local("Courier New"),local("Liberation Mono"),local("Cousine");size-adjust:100%;ascent-override:102%;descent-override:30%;line-gap-override:0%}
+
+/* Mono text in Arabic (./styles/ui.scss): the same file for Latin and digits, without the spaces and bidi controls,
+   which the Arabic font then draws. */
+@font-face{font-family:"JetBrains Mono Latin";font-style:normal;font-weight:400;font-display:swap;src:url(./fonts/jetbrains-mono-latin-400-normal.woff2) format("woff2");unicode-range:U+0021-007E,U+00A1-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2010-2027,U+2030-205E,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FFFD}
+
+/* Titles: El Messiri 600, static instance, subset for Latin (13.5 KB) and for Arabic (11.6 KB, fetched only when
+   Arabic text is drawn). Not preloaded.
+   Fallback metrics: El Messiri is 0.9006 of Arial's width; overrides are its ascent 1.019 and descent 0.544 divided by that. */
+@font-face{font-family:"El Messiri";font-style:normal;font-weight:600;font-display:swap;src:url(./fonts/el-messiri-latin-600.woff2) format("woff2");unicode-range:U+0020-007E,U+00A0-00FF,U+0152-0153,U+0178,U+02BC,U+2009-200A,U+2010-2011,U+2013-2014,U+2018-2019,U+201C-201D,U+2022,U+2026,U+202F,U+2039-203A,U+20AC,U+2212}
+@font-face{font-family:"El Messiri";font-style:normal;font-weight:600;font-display:swap;src:url(./fonts/el-messiri-arabic-600.woff2) format("woff2");unicode-range:U+0600-06FF,U+0750-077F,U+FB50-FDFF,U+FE70-FEFF,U+200C-200F}
+@font-face{font-family:"El Messiri Fallback";src:local("Arial"),local("Liberation Sans"),local("Roboto"),local("Helvetica");size-adjust:90.06%;ascent-override:113.15%;descent-override:60.4%;line-gap-override:0%}

@@ -1,0 +1,9 @@
+/* The showcase app: showcase/main.ts and what it imports from ui/. */
+{
+	"extends": "./tsconfig.json",
+	"compilerOptions": {
+		"outDir": "./out-tsc/app",
+		"types": []
+	},
+	"files": ["showcase/main.ts"]
+}

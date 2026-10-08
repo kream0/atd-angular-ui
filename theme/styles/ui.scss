@@ -1,0 +1,181 @@
+/* The UI kit's global styles: the tokens, light and dark, and the few global rules the primitives need.
+   Use it after Tailwind's three layers, in the same Sass entry file, so `@layer`, `@apply` and `theme()` work:
+
+     @use 'tailwindcss/base';
+     @use 'tailwindcss/components';
+     @use 'tailwindcss/utilities';
+     @use '<path to>/theme/styles/ui';
+*/
+
+/* Design tokens: colours as RGB channels, mapped to `ui-*` colours in ../tailwind-preset.js.
+   Light: ivory and pale sage, deep emerald, brass used sparingly. Dark: green-black night, the same hues lifted.
+   Every text pair passes WCAG AA (4.5:1), every border, focus and state colour 3:1. */
+@layer base {
+	:root {
+		--ui-bg: 243 244 238;
+		--ui-surface: 255 253 248;
+		--ui-fg: 28 43 37;
+		--ui-muted: 86 101 94;
+		--ui-line: 220 221 211;
+		--ui-line-strong: 125 138 130;
+		--ui-accent: 11 93 75;
+		--ui-accent-fg: 255 253 248;
+		--ui-accent-ink: 11 93 75;
+		--ui-accent-soft: 226 238 230;
+		--ui-focus: 11 93 75;
+		--ui-danger: 168 50 45;
+		--ui-danger-ink: 168 50 45;
+		--ui-danger-soft: 248 231 227;
+		--ui-success-ink: 59 107 34;
+		--ui-warning-ink: 135 87 0;
+		--ui-gold: 176 138 62;
+		--ui-gold-ink: 122 90 28;
+		--ui-band: 11 74 60;
+		--ui-band-fg: 246 241 227;
+
+		/* Shape and depth: controls are softly rounded, cards and sheets more, pills fully. Shadows are tinted green. */
+		--ui-radius-sm: 6px;
+		--ui-radius: 10px;
+		--ui-radius-lg: 16px;
+		--ui-shadow-sm: 0 1px 2px rgb(15 40 32 / 0.06), 0 1px 1px rgb(15 40 32 / 0.04);
+		--ui-shadow-lg: 0 12px 32px -12px rgb(15 40 32 / 0.28), 0 2px 6px rgb(15 40 32 / 0.08);
+	}
+
+	.dark {
+		--ui-bg: 15 23 20;
+		--ui-surface: 23 34 30;
+		--ui-fg: 238 235 224;
+		--ui-muted: 162 173 166;
+		--ui-line: 43 55 50;
+		--ui-line-strong: 113 128 122;
+		--ui-accent: 93 187 152;
+		--ui-accent-fg: 15 23 20;
+		--ui-accent-ink: 111 199 166;
+		--ui-accent-soft: 28 52 44;
+		--ui-focus: 111 199 166;
+		--ui-danger: 232 120 110;
+		--ui-danger-ink: 240 137 127;
+		--ui-danger-soft: 58 32 30;
+		--ui-success-ink: 156 203 126;
+		--ui-warning-ink: 226 182 92;
+		--ui-gold: 201 164 94;
+		--ui-gold-ink: 216 184 119;
+		--ui-band: 19 48 42;
+		--ui-band-fg: 241 235 220;
+		--ui-shadow-sm: 0 1px 2px rgb(0 0 0 / 0.3);
+		--ui-shadow-lg: 0 16px 40px -12px rgb(0 0 0 / 0.6), 0 2px 6px rgb(0 0 0 / 0.3);
+	}
+}
+
+/* The geometric motif: an eight-pointed star grid, the classic star-and-cross. One SVG, used as a mask so the colour
+   comes from the tokens in both themes. `.ui-pattern` is a decorative layer: put it in a `relative` parent; it never
+   takes pointer events and is hidden from assistive tech by being a pseudo-element. */
+@layer components {
+	.ui-pattern {
+		position: relative;
+		isolation: isolate;
+	}
+
+	.ui-pattern::before {
+		content: '';
+		position: absolute;
+		inset: 0;
+		z-index: -1;
+		pointer-events: none;
+		background-color: rgb(var(--ui-pattern-color, var(--ui-gold)) / var(--ui-pattern-alpha, 0.22));
+		-webkit-mask: var(--ui-motif-grid) 0 0 / 40px 40px repeat;
+		mask: var(--ui-motif-grid) 0 0 / 40px 40px repeat;
+	}
+
+	/* A section divider: two hairlines and one small star. */
+	.ui-divider {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		color: rgb(var(--ui-gold));
+	}
+
+	.ui-divider::before,
+	.ui-divider::after {
+		content: '';
+		height: 1px;
+		flex: 1;
+		background-color: rgb(var(--ui-line));
+	}
+
+	.ui-star {
+		display: inline-block;
+		flex: none;
+		width: 0.875rem;
+		height: 0.875rem;
+		background-color: currentColor;
+		-webkit-mask: var(--ui-motif-star) center / contain no-repeat;
+		mask: var(--ui-motif-star) center / contain no-repeat;
+	}
+}
+
+:root {
+	--ui-motif-grid: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40' fill='none' stroke='%23000' stroke-width='1'%3E%3Cpath d='M20 0l5.86 5.86h8.28v8.28L40 20l-5.86 5.86v8.28h-8.28L20 40l-5.86-5.86H5.86v-8.28L0 20l5.86-5.86V5.86h8.28z'/%3E%3C/svg%3E");
+	--ui-motif-star: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 0l3.51 3.51h4.98v4.98L24 12l-3.51 3.51v4.98h-4.98L12 24l-3.51-3.51H3.51v-4.98L0 12l3.51-3.51V3.51h4.98z'/%3E%3C/svg%3E");
+}
+
+/* The focus ring of every interactive primitive: a 2px outline in the focus token, offset 2px, on keyboard focus only. */
+@layer components {
+	.ui-focus {
+		@apply focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ui-focus;
+	}
+}
+
+/* The scroll cue of a tab row (app-ui-tabs, app-ui-segmented) or a markdown table: UiScrollCueDirective sets
+   `ui-more-start` / `ui-more-end` while that edge has more to scroll, and the fade widths (at most 2rem, less as the
+   edge comes near). The gradient runs toward the inline end, so in RTL the start fade is on the right. A row that fits
+   gets no mask at all. */
+.ui-scroll-cue:is(.ui-more-start, .ui-more-end) {
+	--ui-cue: transparent, #000 var(--ui-cue-start, 0px), #000 calc(100% - var(--ui-cue-end, 0px)), transparent;
+	-webkit-mask-image: linear-gradient(to right, var(--ui-cue));
+	mask-image: linear-gradient(to right, var(--ui-cue));
+}
+
+.ui-scroll-cue:is(.ui-more-start, .ui-more-end):dir(rtl) {
+	-webkit-mask-image: linear-gradient(to left, var(--ui-cue));
+	mask-image: linear-gradient(to left, var(--ui-cue));
+}
+
+/* A markdown table fades from sm up only: on a phone it keeps its look, cut mid-column. */
+@media (max-width: 639.98px) {
+	.ui-scroll-cue.ui-scroll-cue-wide:is(.ui-more-start, .ui-more-end) {
+		-webkit-mask-image: none;
+		mask-image: none;
+	}
+}
+
+/* Arabic text. Mono has no Arabic glyphs, and the generic `monospace` in the mono stack comes before the Arabic fonts:
+   it would draw Arabic in a monospaced face, letters set apart. Under :lang(ar), mono text keeps JetBrains Mono for
+   Latin and digits (codes, counters) through "JetBrains Mono Latin" (../fonts.css), whose range leaves the spaces out:
+   JetBrains Mono's wide space would sit between Arabic words. Arabic letters and spaces take the Arabic stack.
+   Uppercase labels drop their case and letter-spacing, which breaks the joins. Inputs keep both: a code is typed in
+   Latin. */
+.font-mono:lang(ar) {
+	font-family: 'JetBrains Mono Latin', theme('fontFamily.arabic');
+}
+
+.uppercase:lang(ar):not(input) {
+	text-transform: none;
+	letter-spacing: 0;
+}
+
+/* Native dialogs (app-ui-dialog): a deep green scrim in both themes, and the page behind a modal does not scroll. */
+dialog::backdrop {
+	background-color: rgb(11 30 24 / 0.6);
+}
+
+html:has(dialog:modal) {
+	overflow: hidden;
+}
+
+/* The tab bar is screen chrome: a printed page leaves it out. */
+@media print {
+	app-bottom-navigation {
+		display: none !important;
+	}
+}

@@ -1,0 +1,9 @@
+/* The specs of ui/, run by `ng test` (angular.json test.include). */
+{
+	"extends": "./tsconfig.json",
+	"compilerOptions": {
+		"outDir": "./out-tsc/spec",
+		"types": ["jasmine"]
+	},
+	"include": ["ui/**/*.spec.ts", "ui/**/*.d.ts"]
+}
