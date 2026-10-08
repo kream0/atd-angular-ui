@@ -8,7 +8,8 @@
 		"start": "ng serve",
 		"build": "ng build",
 		"test": "ng test",
-		"test:ci": "ng test --watch=false --browsers=ChromeHeadlessNoSandbox"
+		"test:ci": "ng test --watch=false --browsers=ChromeHeadlessNoSandbox",
+		"check:ui": "node scripts/check-ui.mjs && node --test scripts/check-ui.test.mjs"
 	},
 	"dependencies": {
 		"@angular/common": "19.2.15",

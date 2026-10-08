@@ -1,3 +1,4 @@
+import { NgTemplateOutlet } from '@angular/common';
 import { Component } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { UiMenuComponent, UiMenuItemDirective } from './menu.component';
@@ -68,6 +69,89 @@ class MiddleHostComponent {
 	`,
 })
 class LowHostComponent {}
+
+type Box = 'clip' | 'scroll' | 'transform' | 'dialog';
+
+/**
+ * A menu inside each kind of container that hid the old list, an absolute box inside the menu: a 48 px tall
+ * box that clips, a box that scrolls, a transformed box with a painted block after it, an open modal dialog that
+ * scrolls. It is fixed near the top of Karma's frame, so the list has room under its trigger and nothing scrolls the
+ * window.
+ */
+@Component({
+	standalone: true,
+	imports: [NgTemplateOutlet, UiMenuComponent, UiMenuItemDirective],
+	template: `
+		<ng-template #menu>
+			<div class="flex justify-end">
+				<app-ui-menu label="Plus d'actions">
+					<button appUiMenuItem type="button">Renommer</button>
+					<button appUiMenuItem type="button">Partager</button>
+					<button appUiMenuItem type="button">Télécharger</button>
+					<button appUiMenuItem type="button" tone="danger">Supprimer</button>
+				</app-ui-menu>
+			</div>
+		</ng-template>
+		<div id="frame" style="position: fixed; top: 40px; inset-inline-start: 16px; width: 360px" [attr.dir]="dir">
+			@switch (box) {
+				@case ('clip') {
+					<div style="height: 48px; overflow: hidden"><ng-container [ngTemplateOutlet]="menu" /></div>
+				}
+				@case ('scroll') {
+					<div id="scroller" style="height: 100px; overflow-y: auto">
+						<ng-container [ngTemplateOutlet]="menu" />
+						<div style="height: 400px"></div>
+					</div>
+				}
+				@case ('transform') {
+					<div style="transform: translateX(0)"><ng-container [ngTemplateOutlet]="menu" /></div>
+					<div style="position: relative; height: 320px; background: white"></div>
+				}
+				@case ('dialog') {
+					<dialog style="inset: 40px auto auto 16px; width: 360px; height: 140px; margin: 0; padding: 0; overflow: auto">
+						<ng-container [ngTemplateOutlet]="menu" />
+					</dialog>
+				}
+			}
+		</div>
+	`,
+})
+class BoxedHostComponent {
+	public box: Box = 'clip';
+	public dir: 'ltr' | 'rtl' = 'ltr';
+}
+
+/**
+ * Where an open list does not show itself: its four corners 2 px inside its rounded edge, its centre, and the
+ * midpoints of its edges that are on screen, each named with what shows there instead.
+ */
+function hiddenAt(list: HTMLElement): string[] {
+	const r = list.getBoundingClientRect();
+	const corner = 2 + parseFloat(getComputedStyle(list).borderTopLeftRadius) * (1 - Math.SQRT1_2);
+	const [midX, midY] = [r.left + r.width / 2, r.top + r.height / 2];
+	const onScreen = ([, x, y]: [string, number, number]): boolean =>
+		x >= 0 && y >= 0 && x < window.innerWidth && y < window.innerHeight;
+	const points: [string, number, number][] = [
+		['top left', r.left + corner, r.top + corner],
+		['top right', r.right - corner, r.top + corner],
+		['bottom left', r.left + corner, r.bottom - corner],
+		['bottom right', r.right - corner, r.bottom - corner],
+		['centre', midX, midY],
+		...([
+			['top', midX, r.top + 2],
+			['bottom', midX, r.bottom - 2],
+			['left', r.left + 2, midY],
+			['right', r.right - 2, midY],
+		] as [string, number, number][]).filter(onScreen),
+	];
+	return points
+		.filter(([, x, y]) => !list.contains(document.elementFromPoint(x, y)))
+		.map(([name, x, y]) => `${name}: ${document.elementFromPoint(x, y)?.tagName.toLowerCase() ?? 'off screen'}`);
+}
+
+const frames = async (count: number): Promise<void> => {
+	for (let i = 0; i < count; i++) await new Promise((resolve) => requestAnimationFrame(resolve));
+};
 
 describe('UiMenuComponent', () => {
 	let fixture: ComponentFixture<HostComponent>;
@@ -282,5 +366,88 @@ describe('UiMenuComponent above the phone tab bar', () => {
 	it('a tab bar hidden on a wide screen changes nothing', () => {
 		const { list, trigger } = open('hidden');
 		expect(list.top).toBeGreaterThanOrEqual(trigger.bottom);
+	});
+});
+
+describe('UiMenuComponent in the top layer', () => {
+	let fixture: ComponentFixture<BoxedHostComponent>;
+
+	afterEach(() => fixture.nativeElement.querySelector('dialog')?.close());
+
+	function settle(): void {
+		fixture.detectChanges();
+		TestBed.flushEffects();
+		fixture.detectChanges();
+	}
+
+	function open(box: Box, dir: 'ltr' | 'rtl'): HTMLElement {
+		TestBed.configureTestingModule({ imports: [BoxedHostComponent] });
+		fixture = TestBed.createComponent(BoxedHostComponent);
+		Object.assign(fixture.componentInstance, { box, dir });
+		fixture.detectChanges();
+		fixture.nativeElement.querySelector('dialog')?.showModal();
+		fixture.nativeElement.querySelector('button[aria-haspopup=menu]').click();
+		settle();
+		return fixture.nativeElement.querySelector('[role=menu]');
+	}
+
+	for (const box of ['clip', 'scroll', 'transform', 'dialog'] as const) {
+		for (const dir of ['ltr', 'rtl'] as const) {
+			it(`${box}, ${dir}: the whole list shows over its container, in the top layer`, () => {
+				const list = open(box, dir);
+				expect(list.matches(':popover-open')).withContext(':popover-open').toBeTrue();
+				expect(hiddenAt(list)).toEqual([]);
+				expect(document.activeElement).toBe(list.querySelector('[role=menuitem]'));
+			});
+		}
+	}
+
+	it('stays under its trigger when a box around it scrolls', async () => {
+		const list = open('scroll', 'ltr');
+		const host: HTMLElement = fixture.nativeElement.querySelector('app-ui-menu');
+		const gap = (): number => list.getBoundingClientRect().top - host.getBoundingClientRect().bottom;
+		const before = { gap: gap(), top: host.getBoundingClientRect().top };
+		(fixture.nativeElement.querySelector('#scroller') as HTMLElement).scrollTop = 30;
+		await frames(3);
+		expect(host.getBoundingClientRect().top).toBeCloseTo(before.top - 30, 0);
+		expect(gap()).toBeCloseTo(before.gap, 0);
+		expect(hiddenAt(list)).toEqual([]);
+	});
+
+	it('closes when its trigger leaves the screen', async () => {
+		open('clip', 'rtl');
+		(fixture.nativeElement.querySelector('#frame') as HTMLElement).style.top = '-200px';
+		window.dispatchEvent(new Event('resize'));
+		await frames(3);
+		fixture.detectChanges();
+		expect(fixture.nativeElement.querySelector('[role=menu]')).toBeNull();
+		expect(fixture.nativeElement.querySelector('button[aria-haspopup=menu]').getAttribute('aria-expanded')).toBe('false');
+	});
+
+	it('a browser without popovers still gets a fixed list, out of a box that clips', () => {
+		const show = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'showPopover')!;
+		Object.defineProperty(HTMLElement.prototype, 'showPopover', { configurable: true, value: undefined });
+		// Such a browser ignores the popover attribute, so it has no rule that hides an unshown popover either.
+		const uaRule = document.head.appendChild(document.createElement('style'));
+		uaRule.textContent = '[popover]:not(:popover-open) { display: block; }';
+		try {
+			const list = open('clip', 'ltr');
+			expect(list.matches(':popover-open')).toBeFalse();
+			expect(getComputedStyle(list).position).toBe('fixed');
+			expect(hiddenAt(list)).toEqual([]);
+		} finally {
+			Object.defineProperty(HTMLElement.prototype, 'showPopover', show);
+			uaRule.remove();
+		}
+	});
+
+	it('Esc in a dialog closes the list only, focus back on the trigger', () => {
+		const list = open('dialog', 'ltr');
+		const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+		list.querySelector('[role=menuitem]')!.dispatchEvent(event);
+		settle();
+		expect(fixture.nativeElement.querySelector('[role=menu]')).toBeNull();
+		expect(fixture.nativeElement.querySelector('dialog').open).toBeTrue();
+		expect(document.activeElement).toBe(fixture.nativeElement.querySelector('button[aria-haspopup=menu]'));
 	});
 });

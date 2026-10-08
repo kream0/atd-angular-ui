@@ -50,7 +50,7 @@ All selectors use the `app` prefix. "Slot" means an attribute that marks project
 | `link` | `a[appUiLink]` | An underlined text link in the accent ink. With `external`, it opens a new tab with `rel="noopener noreferrer"` and a hidden "(new tab)" text. |
 | `list` | `ul[appUiList]`, `ol[appUiList]`, `li[appUiListItem]`; slots `[appUiListLeading]`, `[appUiListTitle]`, `[appUiListMeta]`, `[appUiListTrailing]` | A stacked list. Each row is at least 56 px tall and is one link or button (use `appUiStretchedLink`). |
 | `markdown` | `app-ui-markdown`, `app-ui-markdown-input` | A small, safe markdown subset (`markdown.ts`), drawn with Angular bindings and never with `innerHTML`. `app-ui-markdown` inputs: `text`, `inline`, `document`. `app-ui-markdown-input` wraps a field's control with a formatting toolbar and a preview; inputs `inline`, `document`, `value`. `plainText()` strips the signs. |
-| `menu` | `app-ui-menu`, `button[appUiMenuItem]`, `a[appUiMenuItem]` | An actions menu behind an icon-button trigger. Menu inputs: `label` (required) and `icon`; item input: `tone` (default, danger). See "Overlays" below for how it is positioned. |
+| `menu` | `app-ui-menu`, `button[appUiMenuItem]`, `a[appUiMenuItem]` | An actions menu behind an icon-button trigger. Menu inputs: `label` (required) and `icon`; item input: `tone` (default, danger). Its list opens in the top layer; see "Overlays" below. |
 | `page-header` | `app-ui-page-header`; slots `[appUiPageActions]`, `[appUiPageEnd]` | The page's only `h1`, in the display face, with an optional back link and actions. Inputs: `title` (required), `subtitle`, `back` (a router path), `backLabel`, `markdownTitle`, `markdownSubtitle`. |
 | `progress` | `app-ui-progress` | A native `<progress>` with a visible text value. Inputs: `label` (required), `value` (required), `max`, `countLabel` ("3 of 8" instead of a percentage). |
 | `radio` | `input[type=radio][appUiRadio]`, `fieldset[appUiFieldset]` | A native radio, and a fieldset whose `legend` names the group. Fieldset inputs: `legend` (required), `hint`, `error`, `required`. |
@@ -215,7 +215,7 @@ To add a component:
 1. Create `ui/<name>/` with `<name>.component.ts` (or `<name>.directive.ts` for behaviour on a native element), `<name>.component.spec.ts` and an `index.ts` that exports the public symbols.
 2. Add `export * from './<name>';` to `ui/index.ts`.
 3. Add a section to `ui/showcase/showcase.component.ts`: a `<section id="..." aria-labelledby="h-...">` with an `h2`. The showcase spec checks one `h1`, unique ids, a name on every control, and 44 px buttons and tabs.
-4. Run `npm run test:ci` and look at the page with `npm start`, in light, dark (`?theme=dark`) and RTL (`?dir=rtl`), at 390 px wide and at desktop width.
+4. Run `npm run test:ci` and `npm run check:ui`, and look at the page with `npm start`, in light, dark (`?theme=dark`) and RTL (`?dir=rtl`), at 390 px wide and at desktop width.
 
 Follow the existing pattern:
 
@@ -293,9 +293,8 @@ Other tokens:
 Stacking order of the fixed layers:
 
 - app bar and bottom navigation: `z-40`;
-- menu panel: `z-50`;
 - toaster: `z-[60]`;
-- dialogs: in the top layer, above all of these.
+- dialogs and the menu list: in the top layer, above all of these, the one opened last on top. The menu list keeps `z-50`, which only counts in a browser without popovers.
 
 ### Dark mode
 
@@ -348,14 +347,20 @@ These rules apply to every component, existing or new.
 
 A menu, select, popover, dialog or toast must never be clipped by a parent's border, `overflow`, `contain` or stacking context. It renders in the browser's top layer (`<dialog>` with `showModal()`, the Popover API), or as a native control whose popup the browser draws outside the page. A layer fixed to the viewport is acceptable only when it is placed once, outside any transformed or overflow-clipped container.
 
+A floating panel (a menu, a list, a picker, a tooltip) is never an absolute box inside a container: use `app-ui-menu`, the bottom sheet, `app-ui-dialog` or a native control. Checks:
+
+- `npm run check:ui` (`scripts/check-ui.mjs`) flags a hand-made one in `ui/` and `showcase/`: an `absolute` or `fixed` element placed against its parent's edge with `top-full` or `bottom-full`.
+- The menu specs fail when any part of an open list is hidden by a box that clips, a box that scrolls, a transformed box or a modal dialog, in LTR and RTL.
+- In an app, a browser check that opens every menu on every page and fails when part of a list is hidden catches what the static check cannot see.
+
 What the kit does today:
 
 | Component | How it is shown | Can a parent clip it? |
 |---|---|---|
 | `app-ui-dialog` | Native `<dialog>` + `showModal()`, so it is in the top layer (`ui/dialog/dialog.component.ts:53`, `:158`). Inert background, Esc closes, page scroll locked by `html:has(dialog:modal)`. | No. |
 | `select[appUiSelect]` | Native `<select>` (`ui/select/select.directive.ts`). The browser draws the option list. | No. |
-| `app-ui-menu`, phone with 6 or more items | A bottom sheet on a native `<dialog>` + `showModal()`, in the top layer (`ui/menu/menu.component.ts:22-23`, `:118`, `:183`). | No. |
-| `app-ui-menu`, every other case | **Not in the top layer yet.** The panel is `absolute z-50` inside the menu's own `relative inline-block` host (`ui/menu/menu.component.ts:99`, `:136`). It flips above the trigger, or to the inline start, when the screen edge is near. | **Yes.** An ancestor with `overflow: hidden/auto/scroll`, `contain: paint`, or a lower stacking context clips it or covers it. Until it moves to the top layer, do not put a menu inside such a container. Moving it there is the next fix to make: `popover="manual"` + `showPopover()`, positioned from the trigger's rectangle, keeping the same keyboard contract. |
+| `app-ui-menu`, phone with 6 or more items | A bottom sheet on a native `<dialog>` + `showModal()`, in the top layer (`ui/menu/menu.component.ts:24-25`, `:116`, `:178`). | No. |
+| `app-ui-menu`, every other case | A manual popover (`popover="manual"` + `showPopover()`), so the list is in the top layer (`ui/menu/menu.component.ts:133`, `:181`). It is `position: fixed` (`:136`; `inset-auto`, `m-0` and `border-0` reset the browser's popover styles) and placed from the trigger's box (`place()`, `:279`): at its inline end, above it when there is no room below (the bottom navigation not counted as room), at its inline start when it would leave the screen, kept 16 px inside the screen, mirrored in RTL, never taller than the room on its side. It follows the trigger on any scroll or resize, once per frame, outside Angular (`:297-311`), and closes when the trigger leaves the screen (`:324`). The list stays in the menu's DOM, so content projection, focus order and the click-outside test are unchanged. | No: no ancestor's `overflow`, transform, `contain` or z-index can clip or cover it, inside a modal dialog too. A browser without the Popover API still gets the fixed list, which a transformed or `contain` ancestor would then catch. |
 | `app-ui-toaster` | A `fixed inset-0 z-[60]` layer that lets the pointer through (`ui/toast/toaster.component.ts:42`). While a modal `<dialog>` is open, a MutationObserver moves the toaster into the newest open dialog, and back on close (`:100-101`, `:119-134`). This keeps the toasts above the backdrop, clickable and announced. | Not by overflow. But a `transform`, `filter` or `contain` on an ancestor would make `fixed` relative to that ancestor. Place the toaster once, in the app shell, outside such containers. |
 
 ### Keyboard and ARIA
@@ -366,7 +371,8 @@ What the kit does today:
   - the trigger has `aria-haspopup="menu"` and `aria-expanded`; the list is `role="menu"`;
   - arrow keys, Home and End move between items;
   - Esc closes the menu and returns focus to the trigger;
-  - Tab closes it, and so does a click outside.
+  - Tab closes it, and so does a click outside;
+  - it also closes when its trigger leaves the screen, and focus inside the list then returns to the trigger.
 - **Tabs:**
   - `tablist` / `tab` / `tabpanel`, with `aria-selected` and `aria-controls`;
   - roving tabindex, so only the selected tab is in the Tab order;
@@ -418,6 +424,7 @@ npm start           # ng serve: the showcase at http://localhost:4200/ (try ?the
 npm test            # ng test: Karma in Chrome, watch mode
 npm run test:ci     # ng test --watch=false --browsers=ChromeHeadlessNoSandbox (CI, containers, root shells)
 npm run build       # ng build (production) into dist/showcase
+npm run check:ui    # no hand-made floating panel in ui/ and showcase/ (scripts/check-ui.mjs), and its node tests
 ```
 
 How the workspace is set up:
@@ -441,3 +448,4 @@ Licence: not chosen yet, ask the owner.
   - app-specific imports were replaced by a self-contained UI text source (`UI_TEXT_SOURCE`);
   - the showcase's theme service was replaced by a local toggle;
   - all sample data was made neutral.
+- 2026-10-08: the menu now opens its list in the top layer, where no container can clip or cover it.

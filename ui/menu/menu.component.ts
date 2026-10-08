@@ -4,11 +4,13 @@ import {
 	Component,
 	computed,
 	contentChildren,
+	DestroyRef,
 	Directive,
 	effect,
 	ElementRef,
 	inject,
 	input,
+	NgZone,
 	signal,
 	untracked,
 	viewChild,
@@ -24,6 +26,8 @@ const SHEET_MIN_ITEMS = 6;
 const ITEM_HEIGHT = 44;
 /** A list moved back inside the screen keeps the page's side gutter at the screen's edge. */
 const SCREEN_GUTTER = 16;
+/** The space between the trigger and its list (px). */
+const GAP = 4;
 
 /**
  * Where the room under a trigger ends: the top of the phone tab bar (`app-bottom-navigation`, fixed at the bottom),
@@ -34,23 +38,11 @@ function screenBottom(): number {
 	return bar && bar.height > 0 ? Math.min(window.innerHeight, bar.top) : window.innerHeight;
 }
 
-/** True when a list placed at the trigger's inline end crosses the screen's inline-start edge. */
-function leavesScreenAtStart(panel: HTMLElement): boolean {
-	const rect = panel.getBoundingClientRect();
-	return getComputedStyle(panel).direction === 'rtl' ? rect.right > document.documentElement.clientWidth : rect.left < 0;
-}
-
-/**
- * How far, in px, a list placed at the trigger's inline start crosses the screen's inline-end edge, gutter included;
- * 0 when it stays inside. A long list under a trigger in the middle of a phone screen crosses one edge or the other.
- */
-function overflowAtEnd(panel: HTMLElement, anchor: HTMLElement): number {
-	const width = panel.getBoundingClientRect().width;
-	const box = anchor.getBoundingClientRect();
-	const over = getComputedStyle(panel).direction === 'rtl'
-		? SCREEN_GUTTER - (box.right - width)
-		: box.left + width - (document.documentElement.clientWidth - SCREEN_GUTTER);
-	return Math.max(0, Math.ceil(over));
+/** False once the element is wholly off the screen, e.g. scrolled away. */
+function onScreen(element: HTMLElement): boolean {
+	const box = element.getBoundingClientRect();
+	const width = document.documentElement.clientWidth;
+	return box.bottom > 0 && box.right > 0 && box.top < window.innerHeight && box.left < width;
 }
 
 /** One action of an `app-ui-menu`. Choosing it closes the menu and puts focus back on the trigger first. */
@@ -89,6 +81,12 @@ export class UiMenuItemDirective {
  * there is no room below, the phone tab bar not counted as room, at its inline start when it would leave the screen,
  * e.g. actions at the start of a phone page header, moved back inside the screen when it would then cross the other
  * edge); on phones a menu of more than 5 items opens as a bottom sheet.
+ *
+ * The list opens in the browser's top layer: a manual popover, fixed and placed from the trigger's box, so no
+ * container's overflow, transform or stacking order can hide it, inside a modal dialog too. It stays in the menu's DOM:
+ * content projection, focus order, the click-outside test and change detection are unchanged. It follows its trigger
+ * when anything scrolls or the screen is resized, once per frame, and closes when the trigger leaves the screen. A
+ * browser without popovers still gets the fixed list. The bottom sheet is a modal dialog, already in the top layer.
  */
 @Component({
 	selector: 'app-ui-menu',
@@ -128,20 +126,15 @@ export class UiMenuItemDirective {
 					</div>
 				</dialog>
 			} @else {
+				<!-- inset, margin, border and overflow reset the browser's popover styles -->
 				<div
 					#panel
 					role="menu"
+					popover="manual"
 					[id]="menuId"
 					[attr.aria-labelledby]="triggerId"
-					class="absolute z-50 w-max min-w-48 max-w-[min(20rem,calc(100vw-2rem))] rounded-ui-lg bg-ui-surface p-1
-						text-ui-fg shadow-ui-lg ring-1 ring-ui-line"
-					[class.end-0]="!atStart()"
-					[class.start-0]="atStart()"
-					[style.margin-inline-start.px]="pullBack() ? -pullBack() : null"
-					[class.top-full]="!above()"
-					[class.mt-1]="!above()"
-					[class.bottom-full]="above()"
-					[class.mb-1]="above()"
+					class="fixed inset-auto z-50 m-0 w-max min-w-48 max-w-[min(20rem,calc(100vw-2rem))] overflow-y-auto rounded-ui-lg
+						border-0 bg-ui-surface p-1 text-ui-fg shadow-ui-lg ring-1 ring-ui-line"
 					(keydown)="onMenuKeydown($event)"
 				>
 					<ng-container [ngTemplateOutlet]="items" />
@@ -158,14 +151,11 @@ export class UiMenuComponent {
 
 	protected readonly open = signal(false);
 	protected readonly sheet = signal(false);
-	protected readonly above = signal(false);
-	protected readonly atStart = signal(false);
-	/** How far a list at the trigger's inline start moves back toward the inline start to stay inside the screen (px). */
-	protected readonly pullBack = signal(0);
 	protected readonly triggerId = uiId('ui-menu-trigger');
 	protected readonly menuId = uiId('ui-menu');
 
 	private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+	private readonly zone = inject(NgZone);
 	private readonly trigger = viewChild.required<string, ElementRef<HTMLButtonElement>>('trigger', { read: ElementRef });
 	private readonly panel = viewChild<ElementRef<HTMLElement>>('panel');
 	private readonly sheetDialog = viewChild<ElementRef<HTMLDialogElement>>('sheetDialog');
@@ -173,6 +163,11 @@ export class UiMenuComponent {
 	private readonly itemCount = computed(() => this.menuItems().length);
 	/** Which item gets focus once the list is rendered: 'first' or 'last'. */
 	private pendingFocus: 'first' | 'last' | null = null;
+	/** Whether the list opens above the trigger, chosen on opening and kept while it follows the trigger. */
+	private above = false;
+	/** Places the open list again on the next frame after a scroll or a resize; null while no list follows. */
+	private follow: (() => void) | null = null;
+	private frame = 0;
 
 	constructor() {
 		effect(() => {
@@ -182,15 +177,17 @@ export class UiMenuComponent {
 				const dialog = this.sheetDialog()?.nativeElement;
 				if (dialog && !dialog.open) dialog.showModal();
 				if (!dialog) {
-					const atStart = leavesScreenAtStart(panel);
-					this.atStart.set(atStart);
-					this.pullBack.set(atStart ? overflowAtEnd(panel, this.host.nativeElement) : 0);
+					// A popover is measured once shown (hidden, it is not rendered).
+					if (typeof panel.showPopover === 'function' && !panel.matches(':popover-open')) panel.showPopover();
+					this.place(panel);
+					this.startFollowing(panel);
 				}
 				const target = this.pendingFocus;
 				this.pendingFocus = null;
 				if (target) this.focusItem(target === 'first' ? 0 : this.items().length - 1);
 			});
 		});
+		inject(DestroyRef).onDestroy(() => this.stopFollowing());
 	}
 
 	public openMenu(focus: 'first' | 'last' = 'first'): void {
@@ -198,9 +195,7 @@ export class UiMenuComponent {
 		const rect = this.trigger().nativeElement.getBoundingClientRect();
 		const height = this.itemCount() * ITEM_HEIGHT + 8;
 		const roomBelow = screenBottom() - rect.bottom;
-		this.above.set(roomBelow < height && rect.top > roomBelow);
-		this.atStart.set(false);
-		this.pullBack.set(0);
+		this.above = roomBelow < height && rect.top > roomBelow;
 		this.sheet.set(this.itemCount() >= SHEET_MIN_ITEMS && window.matchMedia(SHEET_QUERY).matches);
 		this.pendingFocus = focus;
 		this.open.set(true);
@@ -209,7 +204,11 @@ export class UiMenuComponent {
 	/** Closes the menu; `returnFocus` puts focus back on the trigger (keyboard, item choice). */
 	public close(returnFocus: boolean): void {
 		if (!this.open()) return;
+		this.stopFollowing();
 		this.sheetDialog()?.nativeElement.close();
+		// Hidden at once, before the list leaves the DOM: Tab then moves on from the trigger, past the list.
+		const panel = this.panel()?.nativeElement;
+		if (panel && typeof panel.hidePopover === 'function' && panel.matches(':popover-open')) panel.hidePopover();
 		this.open.set(false);
 		if (returnFocus) this.trigger().nativeElement.focus();
 	}
@@ -270,5 +269,61 @@ export class UiMenuComponent {
 
 	private focusItem(index: number): void {
 		this.items()[index]?.focus();
+	}
+
+	/**
+	 * Puts the list next to the trigger (the menu's box), in screen coordinates: under it or above it as chosen on
+	 * opening, at its inline end, or at its inline start when the end would leave the screen, moved back inside the
+	 * screen's gutter when it would then cross the other edge. It is never taller than the room on its side.
+	 */
+	private place(panel: HTMLElement): void {
+		const box = this.host.nativeElement.getBoundingClientRect();
+		const room = this.above ? box.top - 2 * GAP : screenBottom() - box.bottom - 2 * GAP;
+		panel.style.maxHeight = `${Math.max(room, ITEM_HEIGHT + 8)}px`;
+		const { width, height } = panel.getBoundingClientRect();
+		const screenWidth = document.documentElement.clientWidth;
+		const rtl = getComputedStyle(panel).direction === 'rtl';
+		let left = rtl ? box.left : box.right - width;
+		if (rtl ? left + width > screenWidth : left < 0) {
+			left = rtl
+				? box.right - width + Math.max(0, Math.ceil(SCREEN_GUTTER - (box.right - width)))
+				: box.left - Math.max(0, Math.ceil(box.left + width - (screenWidth - SCREEN_GUTTER)));
+		}
+		panel.style.left = `${left}px`;
+		panel.style.top = `${this.above ? box.top - GAP - height : box.bottom + GAP}px`;
+	}
+
+	/** Scrolls anywhere (caught on the way down) and resizes move the list with its trigger, outside Angular. */
+	private startFollowing(panel: HTMLElement): void {
+		this.stopFollowing();
+		const follow = (): void => {
+			if (this.frame) return;
+			this.frame = requestAnimationFrame(() => {
+				this.frame = 0;
+				if (onScreen(this.host.nativeElement)) this.place(panel);
+				else this.zone.run(() => this.leave(panel));
+			});
+		};
+		this.follow = follow;
+		this.zone.runOutsideAngular(() => {
+			window.addEventListener('scroll', follow, { capture: true, passive: true });
+			window.addEventListener('resize', follow, { passive: true });
+		});
+	}
+
+	private stopFollowing(): void {
+		cancelAnimationFrame(this.frame);
+		this.frame = 0;
+		if (!this.follow) return;
+		window.removeEventListener('scroll', this.follow, { capture: true });
+		window.removeEventListener('resize', this.follow);
+		this.follow = null;
+	}
+
+	/** The trigger has left the screen: the list closes, and focus inside it goes back to the trigger, unscrolled. */
+	private leave(panel: HTMLElement): void {
+		const focused = panel.contains(document.activeElement);
+		this.close(false);
+		if (focused) this.trigger().nativeElement.focus({ preventScroll: true });
 	}
 }
